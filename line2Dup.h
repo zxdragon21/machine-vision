@@ -6,7 +6,8 @@
 #include <map>
 #include <functional>
 #include "mipp.h"  // for SIMD in different platforms
-#include <opencv2/gapi/core.hpp>
+//#include <opencv2/gapi/core.hpp>
+#include <opencv2/core/ocl.hpp>
 #include <chrono>
 class Timer
 {

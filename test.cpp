@@ -4,10 +4,12 @@
 #include <assert.h>
 #include <chrono>
 #include <opencv2/opencv.hpp>
+#include <opencv2/core/ocl.hpp>
 using namespace std;
 using namespace cv;
 
-static std::string prefix = "D:\\defect\\template_match\\shape_based_matching\\fusion\\test\\";
+
+static std::string prefix = "/home/ztl/zipper/test/";
 
 // NMS, got from cv::dnn so we don't need opencv contrib
 // just collapse it
@@ -201,6 +203,8 @@ void scale_test(string mode = "test"){
             cv::rectangle(img, pts1, pts2, color, 2);
             // cv::circle(img, {x, y}, r, color, 2);
         }
+        namedWindow("img",WINDOW_NORMAL);
+        resizeWindow("img", Size(1024,768));
         imshow("img", img);
         waitKey(0);
         std::cout << "test end" << std::endl << std::endl;
@@ -493,7 +497,10 @@ void view_angle(){
 }
 
 int main(){
-    // MIPP_test();
+    MIPP_test();
+    ocl::setUseOpenCL(true);
+    bool Is_have_opencl=ocl::haveOpenCL();
+    printf("Is_have_opencl:%d\n",Is_have_opencl);
     // angle_test("train"); // test or train
     scale_test("test");
     return 0;

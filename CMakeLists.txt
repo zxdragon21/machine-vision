@@ -6,7 +6,7 @@ project(shape_based_matching)
 # debug or release
 SET(CMAKE_BUILD_TYPE "Release" "Debug")
 
-set(OpenCV_DIR D:/opencv/opencv-4.7.0/build/install)
+#set(OpenCV_DIR D:/opencv/opencv-4.7.0/build/install)
 # arm or x86
 IF(${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm")
     SET(PLATFORM_COMPILE_FLAGS "-mfpu=neon")
@@ -15,7 +15,7 @@ ELSE()
 
     # some places of the algorithm are designed for 128 SIMD
     # so 128 SSE may slightly faster than 256 AVX, you may want this
-#    SET(PLATFORM_COMPILE_FLAGS "-msse ")  # SSE only -msse2 -msse3 -msse4 -mssse3
+    #SET(PLATFORM_COMPILE_FLAGS "-msse")  # SSE only -msse2 -msse3 -msse4 -mssse3
 ENDIF()
 
 SET(COMMON_COMPILE_FLAGS "-fopenmp") # -fno-strict-aliasing

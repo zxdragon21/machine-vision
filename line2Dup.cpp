@@ -271,13 +271,10 @@ static void quantizedOrientations(const Mat &src, Mat &magnitude,
     // Compute horizontal and vertical image derivatives on all color channels separately
     static const int KERNEL_SIZE = 5;
     // For some reason cvSmooth/cv::GaussianBlur, cvSobel/cv::Sobel have different defaults for border handling...
-    cv::GMat in;
-    cv::GMat out = cv::gapi::gaussianBlur(in, cv::Size(KERNEL_SIZE, KERNEL_SIZE), 0, 0);
-    cv::GComputation ac(in, out);
-    // For some reason cvSmooth/cv::GaussianBlur, cvSobel/cv::Sobel have different defaults for border handling...
-    ac.apply(src, smoothed);
-    // GaussianBlur(src, smoothed, Size(KERNEL_SIZE, KERNEL_SIZE), 0, 0, BORDER_REPLICATE);
-
+    UMat umatsrc = src.getUMat(ACCESS_FAST);
+    UMat umatsmoothed;
+    GaussianBlur(src, smoothed, Size(KERNEL_SIZE, KERNEL_SIZE), 0, 0, BORDER_REPLICATE);
+    smoothed = umatsmoothed.getMat(ACCESS_FAST);
     if(src.channels() == 1){
         Mat sobel_dx, sobel_dy, sobel_ag;
         Sobel(smoothed, sobel_dx, CV_16U, 1, 0, 3, 1.0, 0.0, BORDER_REPLICATE);
