@@ -311,45 +311,38 @@ static void quantizedOrientations(const Mat &src, Mat &magnitude,
         const int length4 = static_cast<const int>(sobel_dy.step1());
         const int length5 = static_cast<const int>(magnitude.step1());
         const int length0 = sobel_3dy.cols * 3;
+        cv::parallel_for_(cv::Range(0, size), [&](const cv::Range& range) {
+            for (int r = 0; r < sobel_3dy.rows; ++r) {
+                int ind = 0;
 
-        for (int r = 0; r < sobel_3dy.rows; ++r)
-        {
-            int ind = 0;
+                for (int i = 0; i < length0; i += 3) {
+                    // Use the gradient orientation of the channel whose magnitude is largest
+                    int mag1 = ptrx[i + 0] * ptrx[i + 0] + ptry[i + 0] * ptry[i + 0];
+                    int mag2 = ptrx[i + 1] * ptrx[i + 1] + ptry[i + 1] * ptry[i + 1];
+                    int mag3 = ptrx[i + 2] * ptrx[i + 2] + ptry[i + 2] * ptry[i + 2];
 
-            for (int i = 0; i < length0; i += 3)
-            {
-                // Use the gradient orientation of the channel whose magnitude is largest
-                int mag1 = ptrx[i + 0] * ptrx[i + 0] + ptry[i + 0] * ptry[i + 0];
-                int mag2 = ptrx[i + 1] * ptrx[i + 1] + ptry[i + 1] * ptry[i + 1];
-                int mag3 = ptrx[i + 2] * ptrx[i + 2] + ptry[i + 2] * ptry[i + 2];
-
-                if (mag1 >= mag2 && mag1 >= mag3)
-                {
-                    ptr0x[ind] = ptrx[i];
-                    ptr0y[ind] = ptry[i];
-                    ptrmg[ind] = (float)mag1;
+                    if (mag1 >= mag2 && mag1 >= mag3) {
+                        ptr0x[ind] = ptrx[i];
+                        ptr0y[ind] = ptry[i];
+                        ptrmg[ind] = (float) mag1;
+                    } else if (mag2 >= mag1 && mag2 >= mag3) {
+                        ptr0x[ind] = ptrx[i + 1];
+                        ptr0y[ind] = ptry[i + 1];
+                        ptrmg[ind] = (float) mag2;
+                    } else {
+                        ptr0x[ind] = ptrx[i + 2];
+                        ptr0y[ind] = ptry[i + 2];
+                        ptrmg[ind] = (float) mag3;
+                    }
+                    ++ind;
                 }
-                else if (mag2 >= mag1 && mag2 >= mag3)
-                {
-                    ptr0x[ind] = ptrx[i + 1];
-                    ptr0y[ind] = ptry[i + 1];
-                    ptrmg[ind] = (float)mag2;
-                }
-                else
-                {
-                    ptr0x[ind] = ptrx[i + 2];
-                    ptr0y[ind] = ptry[i + 2];
-                    ptrmg[ind] = (float)mag3;
-                }
-                ++ind;
+                ptrx += length1;
+                ptry += length2;
+                ptr0x += length3;
+                ptr0y += length4;
+                ptrmg += length5;
             }
-            ptrx += length1;
-            ptry += length2;
-            ptr0x += length3;
-            ptr0y += length4;
-            ptrmg += length5;
-        }
-
+        });
         // Calculate the final gradient orientations
         phase(sobel_dx, sobel_dy, sobel_ag, true);
         hysteresisGradient(magnitude, angle, sobel_ag, threshold * threshold);
@@ -421,50 +414,47 @@ bool ColorGradientPyramid::extractTemplate(Template &templ) const
 
     int nms_kernel_size = 5;
     cv::Mat magnitude_valid = cv::Mat(magnitude.size(), CV_8UC1, cv::Scalar(255));
+    cv::parallel_for_(cv::Range(0, size), [&](const cv::Range& range) {
+        for (int r = 0 + nms_kernel_size / 2; r < magnitude.rows - nms_kernel_size / 2; ++r) {
+            const uchar *mask_r = no_mask ? NULL : local_mask.ptr<uchar>(r);
 
-    for (int r = 0+nms_kernel_size/2; r < magnitude.rows-nms_kernel_size/2; ++r)
-    {
-        const uchar *mask_r = no_mask ? NULL : local_mask.ptr<uchar>(r);
+            for (int c = 0 + nms_kernel_size / 2; c < magnitude.cols - nms_kernel_size / 2; ++c) {
+                if (no_mask || mask_r[c]) {
+                    float score = 0;
+                    if (magnitude_valid.at<uchar>(r, c) > 0) {
+                        score = magnitude.at<float>(r, c);
+                        bool is_max = true;
+                        for (int r_offset = -nms_kernel_size / 2; r_offset <= nms_kernel_size / 2; r_offset++) {
+                            for (int c_offset = -nms_kernel_size / 2; c_offset <= nms_kernel_size / 2; c_offset++) {
+                                if (r_offset == 0 && c_offset == 0) continue;
 
-        for (int c = 0+nms_kernel_size/2; c < magnitude.cols-nms_kernel_size/2; ++c)
-        {
-            if (no_mask || mask_r[c])
-            {
-                float score = 0;
-                if(magnitude_valid.at<uchar>(r, c)>0){
-                    score = magnitude.at<float>(r, c);
-                    bool is_max = true;
-                    for(int r_offset = -nms_kernel_size/2; r_offset <= nms_kernel_size/2; r_offset++){
-                        for(int c_offset = -nms_kernel_size/2; c_offset <= nms_kernel_size/2; c_offset++){
-                            if(r_offset == 0 && c_offset == 0) continue;
+                                if (score < magnitude.at<float>(r + r_offset, c + c_offset)) {
+                                    score = 0;
+                                    is_max = false;
+                                    break;
+                                }
+                            }
+                            if (!is_max) break;
+                        }
 
-                            if(score < magnitude.at<float>(r+r_offset, c+c_offset)){
-                                score = 0;
-                                is_max = false;
-                                break;
+                        if (is_max) {
+                            for (int r_offset = -nms_kernel_size / 2; r_offset <= nms_kernel_size / 2; r_offset++) {
+                                for (int c_offset = -nms_kernel_size / 2; c_offset <= nms_kernel_size / 2; c_offset++) {
+                                    if (r_offset == 0 && c_offset == 0) continue;
+                                    magnitude_valid.at<uchar>(r + r_offset, c + c_offset) = 0;
+                                }
                             }
                         }
-                        if(!is_max) break;
                     }
 
-                    if(is_max){
-                        for(int r_offset = -nms_kernel_size/2; r_offset <= nms_kernel_size/2; r_offset++){
-                            for(int c_offset = -nms_kernel_size/2; c_offset <= nms_kernel_size/2; c_offset++){
-                                if(r_offset == 0 && c_offset == 0) continue;
-                                magnitude_valid.at<uchar>(r+r_offset, c+c_offset) = 0;
-                            }
-                        }
+                    if (score > threshold_sq && angle.at<uchar>(r, c) > 0) {
+                        candidates.push_back(Candidate(c, r, getLabel(angle.at<uchar>(r, c)), score));
+                        candidates.back().f.theta = angle_ori.at<float>(r, c);
                     }
-                }
-
-                if (score > threshold_sq && angle.at<uchar>(r, c) > 0)
-                {
-                    candidates.push_back(Candidate(c, r, getLabel(angle.at<uchar>(r, c)), score));
-                    candidates.back().f.theta = angle_ori.at<float>(r, c);
                 }
             }
         }
-    }
+    });
     // We require a certain number of features
     if (candidates.size() < num_features){
         if(candidates.size() <= 4) {
@@ -540,33 +530,34 @@ static void orUnaligned8u(const uchar *src, const int src_stride,
                           uchar *dst, const int dst_stride,
                           const int width, const int height)
 {
-    for (int r = 0; r < height; ++r)
-    {
-        int c = 0;
+    cv::parallel_for_(cv::Range(0, size), [&](const cv::Range& range) {
+        for (int r = 0; r < height; ++r) {
+            int c = 0;
 
-        // not aligned, which will happen because we move 1 bytes a time for spreading
-        while (reinterpret_cast<unsigned long long>(src + c) % 16 != 0) {
-            dst[c] |= src[c];
-            c++;
+            // not aligned, which will happen because we move 1 bytes a time for spreading
+            while (reinterpret_cast<unsigned long long>(src + c) % 16 != 0) {
+                dst[c] |= src[c];
+                c++;
+            }
+
+            // avoid out of bound when can't divid
+            // note: can't use c<width !!!
+            for (; c <= width - mipp::N<uint8_t>(); c += mipp::N<uint8_t>()) {
+                mipp::Reg<uint8_t> src_v((uint8_t *) src + c);
+                mipp::Reg<uint8_t> dst_v((uint8_t *) dst + c);
+
+                mipp::Reg<uint8_t> res_v = mipp::orb(src_v, dst_v);
+                res_v.store((uint8_t *) dst + c);
+            }
+
+            for (; c < width; c++)
+                dst[c] |= src[c];
+
+            // Advance to next row
+            src += src_stride;
+            dst += dst_stride;
         }
-
-        // avoid out of bound when can't divid
-        // note: can't use c<width !!!
-        for (; c <= width-mipp::N<uint8_t>(); c+=mipp::N<uint8_t>()){
-            mipp::Reg<uint8_t> src_v((uint8_t*)src + c);
-            mipp::Reg<uint8_t> dst_v((uint8_t*)dst + c);
-
-            mipp::Reg<uint8_t> res_v = mipp::orb(src_v, dst_v);
-            res_v.store((uint8_t*)dst + c);
-        }
-
-        for(; c<width; c++)
-            dst[c] |= src[c];
-
-        // Advance to next row
-        src += src_stride;
-        dst += dst_stride;
-    }
+    });
 }
 
 static void spread(const Mat &src, Mat &dst, int T)
@@ -575,14 +566,14 @@ static void spread(const Mat &src, Mat &dst, int T)
     dst = Mat::zeros(src.size(), CV_8U);
 
     // Fill in spread gradient image (section 2.3)
-    for (int r = 0; r < T; ++r)
-    {
-        for (int c = 0; c < T; ++c)
-        {
-            orUnaligned8u(&src.at<unsigned char>(r, c), static_cast<const int>(src.step1()), dst.ptr(),
-                          static_cast<const int>(dst.step1()), src.cols - c, src.rows - r);
+    cv::parallel_for_(cv::Range(0, size), [&](const cv::Range& range) {
+        for (int r = 0; r < T; ++r) {
+            for (int c = 0; c < T; ++c) {
+                orUnaligned8u(&src.at<unsigned char>(r, c), static_cast<const int>(src.step1()), dst.ptr(),
+                              static_cast<const int>(dst.step1()), src.cols - c, src.rows - r);
+            }
         }
-    }
+    });
 }
 
 static const unsigned char LUT3 = 3;
@@ -601,22 +592,20 @@ static void computeResponseMaps(const Mat &src, std::vector<Mat> &response_maps)
 
     Mat lsb4(src.size(), CV_8U);
     Mat msb4(src.size(), CV_8U);
+    cv::parallel_for_(cv::Range(0, size), [&](const cv::Range& range) {
+        for (int r = 0; r < src.rows; ++r) {
+            const uchar *src_r = src.ptr(r);
+            uchar *lsb4_r = lsb4.ptr(r);
+            uchar *msb4_r = msb4.ptr(r);
 
-    for (int r = 0; r < src.rows; ++r)
-    {
-        const uchar *src_r = src.ptr(r);
-        uchar *lsb4_r = lsb4.ptr(r);
-        uchar *msb4_r = msb4.ptr(r);
-
-        for (int c = 0; c < src.cols; ++c)
-        {
-            // Least significant 4 bits of spread image pixel
-            lsb4_r[c] = src_r[c] & 15;
-            // Most significant 4 bits, right-shifted to be in [0, 16)
-            msb4_r[c] = (src_r[c] & 240) >> 4;
+            for (int c = 0; c < src.cols; ++c) {
+                // Least significant 4 bits of spread image pixel
+                lsb4_r[c] = src_r[c] & 15;
+                // Most significant 4 bits, right-shifted to be in [0, 16)
+                msb4_r[c] = (src_r[c] & 240) >> 4;
+            }
         }
-    }
-
+    });
     {
         uchar *lsb4_data = lsb4.ptr<uchar>();
         uchar *msb4_data = msb4.ptr<uchar>();
@@ -714,22 +703,21 @@ static void linearize(const Mat &response_map, Mat &linearized, int T)
 
     // Outer two for loops iterate over top-left T^2 starting pixels
     int index = 0;
-    for (int r_start = 0; r_start < T; ++r_start)
-    {
-        for (int c_start = 0; c_start < T; ++c_start)
-        {
-            uchar *memory = linearized.ptr(index);
-            ++index;
+    cv::parallel_for_(cv::Range(0, size), [&](const cv::Range& range) {
+        for (int r_start = 0; r_start < T; ++r_start) {
+            for (int c_start = 0; c_start < T; ++c_start) {
+                uchar *memory = linearized.ptr(index);
+                ++index;
 
-            // Inner two loops copy every T-th pixel into the linear memory
-            for (int r = r_start; r < response_map.rows; r += T)
-            {
-                const uchar *response_data = response_map.ptr(r);
-                for (int c = c_start; c < response_map.cols; c += T)
-                    *memory++ = response_data[c];
+                // Inner two loops copy every T-th pixel into the linear memory
+                for (int r = r_start; r < response_map.rows; r += T) {
+                    const uchar *response_data = response_map.ptr(r);
+                    for (int c = c_start; c < response_map.cols; c += T)
+                        *memory++ = response_data[c];
+                }
             }
         }
-    }
+    });
 }
 /****************************************************************************************\
 *                                                             Linearized similarities                                                                    *
@@ -912,31 +900,32 @@ static void similarity_64(const std::vector<Mat> &linear_memories, const Templat
 
     // Compute the similarity measure for this template by accumulating the contribution of
     // each feature
-    for (int i = 0; i < (int)templ.features.size(); ++i)
-    {
-        // Add the linear memory at the appropriate offset computed from the location of
-        // the feature in the template
-        Feature f = templ.features[i];
-        // Discard feature if out of bounds
-        /// @todo Shouldn't actually see x or y < 0 here?
-        if (f.x < 0 || f.x >= size.width || f.y < 0 || f.y >= size.height)
-            continue;
-        const uchar *lm_ptr = accessLinearMemory(linear_memories, f, T, W);
+    cv::parallel_for_(cv::Range(0, size), [&](const cv::Range& range) {
+        for (int i = 0; i < (int) templ.features.size(); ++i) {
+            // Add the linear memory at the appropriate offset computed from the location of
+            // the feature in the template
+            Feature f = templ.features[i];
+            // Discard feature if out of bounds
+            /// @todo Shouldn't actually see x or y < 0 here?
+            if (f.x < 0 || f.x >= size.width || f.y < 0 || f.y >= size.height)
+                continue;
+            const uchar *lm_ptr = accessLinearMemory(linear_memories, f, T, W);
 
-        // Now we do an aligned/unaligned add of dst_ptr and lm_ptr with template_positions elements
-        int j = 0;
+            // Now we do an aligned/unaligned add of dst_ptr and lm_ptr with template_positions elements
+            int j = 0;
 
-        for(; j <= template_positions -mipp::N<uint8_t>(); j+=mipp::N<uint8_t>()){
-            mipp::Reg<uint8_t> src_v((uint8_t*)lm_ptr + j);
-            mipp::Reg<uint8_t> dst_v((uint8_t*)dst_ptr + j);
+            for (; j <= template_positions - mipp::N<uint8_t>(); j += mipp::N<uint8_t>()) {
+                mipp::Reg<uint8_t> src_v((uint8_t *) lm_ptr + j);
+                mipp::Reg<uint8_t> dst_v((uint8_t *) dst_ptr + j);
 
-            mipp::Reg<uint8_t> res_v = src_v + dst_v;
-            res_v.store((uint8_t*)dst_ptr + j);
+                mipp::Reg<uint8_t> res_v = src_v + dst_v;
+                res_v.store((uint8_t *) dst_ptr + j);
+            }
+
+            for (; j < template_positions; j++)
+                dst_ptr[j] += lm_ptr[j];
         }
-
-        for(; j<template_positions; j++)
-            dst_ptr[j] += lm_ptr[j];
-    }
+    });
 }
 
 static void similarityLocal_64(const std::vector<Mat> &linear_memories, const Template &templ,

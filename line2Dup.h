@@ -8,6 +8,7 @@
 #include "mipp.h"  // for SIMD in different platforms
 //#include <opencv2/gapi/core.hpp>
 #include <opencv2/core/ocl.hpp>
+#include <opencv2/core/parallel/parallel.hpp>
 #include <chrono>
 class Timer
 {
