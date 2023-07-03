@@ -1,7 +1,7 @@
 #include "line2Dup.h"
 #include <iostream>
 #include "fusion.h"
-#include <opencv2/core/parallel/parallel.hpp>
+#include <opencv2/core/parallel/parallel_backend.hpp>
 using namespace std;
 using namespace cv;
 
@@ -290,6 +290,7 @@ static void quantizedOrientations(const Mat &src, Mat &magnitude,
 
         // Allocate temporary buffers
         Size size = src.size();
+
         Mat sobel_3dx;              // per-channel horizontal derivative
         Mat sobel_3dy;              // per-channel vertical derivative
         Mat sobel_dx(size, CV_32F); // maximum horizontal derivative
@@ -311,7 +312,8 @@ static void quantizedOrientations(const Mat &src, Mat &magnitude,
         const int length4 = static_cast<const int>(sobel_dy.step1());
         const int length5 = static_cast<const int>(magnitude.step1());
         const int length0 = sobel_3dy.cols * 3;
-        cv::parallel_for_(cv::Range(0, size), [&](const cv::Range& range) {
+        Range r(0, size.width * size.height);
+
             for (int r = 0; r < sobel_3dy.rows; ++r) {
                 int ind = 0;
 
@@ -342,8 +344,7 @@ static void quantizedOrientations(const Mat &src, Mat &magnitude,
                 ptr0y += length4;
                 ptrmg += length5;
             }
-        });
-        // Calculate the final gradient orientations
+         // Calculate the final gradient orientations
         phase(sobel_dx, sobel_dy, sobel_ag, true);
         hysteresisGradient(magnitude, angle, sobel_ag, threshold * threshold);
         angle_ori = sobel_ag;
@@ -414,7 +415,7 @@ bool ColorGradientPyramid::extractTemplate(Template &templ) const
 
     int nms_kernel_size = 5;
     cv::Mat magnitude_valid = cv::Mat(magnitude.size(), CV_8UC1, cv::Scalar(255));
-    cv::parallel_for_(cv::Range(0, size), [&](const cv::Range& range) {
+    cv::parallel_for_(cv::Range(0, magnitude.rows * magnitude.cols), [&](const cv::Range& range) {
         for (int r = 0 + nms_kernel_size / 2; r < magnitude.rows - nms_kernel_size / 2; ++r) {
             const uchar *mask_r = no_mask ? NULL : local_mask.ptr<uchar>(r);
 
@@ -530,7 +531,7 @@ static void orUnaligned8u(const uchar *src, const int src_stride,
                           uchar *dst, const int dst_stride,
                           const int width, const int height)
 {
-    cv::parallel_for_(cv::Range(0, size), [&](const cv::Range& range) {
+    cv::parallel_for_(cv::Range(0, height), [&](const cv::Range& range) {
         for (int r = 0; r < height; ++r) {
             int c = 0;
 
@@ -566,15 +567,14 @@ static void spread(const Mat &src, Mat &dst, int T)
     dst = Mat::zeros(src.size(), CV_8U);
 
     // Fill in spread gradient image (section 2.3)
-    cv::parallel_for_(cv::Range(0, size), [&](const cv::Range& range) {
+
         for (int r = 0; r < T; ++r) {
             for (int c = 0; c < T; ++c) {
                 orUnaligned8u(&src.at<unsigned char>(r, c), static_cast<const int>(src.step1()), dst.ptr(),
                               static_cast<const int>(dst.step1()), src.cols - c, src.rows - r);
             }
         }
-    });
-}
+   }
 
 static const unsigned char LUT3 = 3;
 // 1,2-->0 3-->LUT3
@@ -592,8 +592,7 @@ static void computeResponseMaps(const Mat &src, std::vector<Mat> &response_maps)
 
     Mat lsb4(src.size(), CV_8U);
     Mat msb4(src.size(), CV_8U);
-    cv::parallel_for_(cv::Range(0, size), [&](const cv::Range& range) {
-        for (int r = 0; r < src.rows; ++r) {
+            for (int r = 0; r < src.rows; ++r) {
             const uchar *src_r = src.ptr(r);
             uchar *lsb4_r = lsb4.ptr(r);
             uchar *msb4_r = msb4.ptr(r);
@@ -605,7 +604,6 @@ static void computeResponseMaps(const Mat &src, std::vector<Mat> &response_maps)
                 msb4_r[c] = (src_r[c] & 240) >> 4;
             }
         }
-    });
     {
         uchar *lsb4_data = lsb4.ptr<uchar>();
         uchar *msb4_data = msb4.ptr<uchar>();
@@ -703,7 +701,7 @@ static void linearize(const Mat &response_map, Mat &linearized, int T)
 
     // Outer two for loops iterate over top-left T^2 starting pixels
     int index = 0;
-    cv::parallel_for_(cv::Range(0, size), [&](const cv::Range& range) {
+
         for (int r_start = 0; r_start < T; ++r_start) {
             for (int c_start = 0; c_start < T; ++c_start) {
                 uchar *memory = linearized.ptr(index);
@@ -717,7 +715,6 @@ static void linearize(const Mat &response_map, Mat &linearized, int T)
                 }
             }
         }
-    });
 }
 /****************************************************************************************\
 *                                                             Linearized similarities                                                                    *
@@ -900,7 +897,7 @@ static void similarity_64(const std::vector<Mat> &linear_memories, const Templat
 
     // Compute the similarity measure for this template by accumulating the contribution of
     // each feature
-    cv::parallel_for_(cv::Range(0, size), [&](const cv::Range& range) {
+    cv::parallel_for_(cv::Range(0, templ.features.size()), [&](const cv::Range& range) {
         for (int i = 0; i < (int) templ.features.size(); ++i) {
             // Add the linear memory at the appropriate offset computed from the location of
             // the feature in the template
