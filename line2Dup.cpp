@@ -1,7 +1,7 @@
 #include "line2Dup.h"
 #include <iostream>
 #include "fusion.h"
-
+#include <opencv2/core/parallel/parallel.hpp>
 using namespace std;
 using namespace cv;
 
